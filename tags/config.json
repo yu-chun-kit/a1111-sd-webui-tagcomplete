@@ -1,5 +1,5 @@
 {
-	"tagFile": "danbooru.csv",
+	"tagFile": "danbooru_zh.csv",
 	"activeIn": {
 		"txt2img": true,
 		"img2img": true,

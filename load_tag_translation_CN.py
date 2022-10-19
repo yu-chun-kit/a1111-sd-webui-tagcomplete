@@ -1,5 +1,4 @@
 import csv
-from os import linesep
 
 def read_csv(path):
     csv_data = []
@@ -25,7 +24,7 @@ if __name__ == "__main__":
             print("error {}".format(csv_list_zh[i]))
             continue
         for j in range(len(csv_list)):
-            if csv_list[j][0] != "0" or len(csv_list[j]) == 3:
+            if csv_list[j][1] != "0" or len(csv_list[j]) == 3:
                 continue
             if csv_list_zh[i][0] == csv_list[j][0]:
                 csv_list[j].append(csv_list_zh[i][2])
