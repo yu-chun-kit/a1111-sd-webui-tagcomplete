@@ -1,3 +1,5 @@
+![tag_autocomplete_light](https://user-images.githubusercontent.com/34448969/208306863-90bbd663-2cb4-47f1-a7fe-7b662a7b95e2.png)
+
 # Booru tag autocompletion for A1111
 
 [![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/DominikDoom/a1111-sd-webui-tagcomplete)](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete/releases)
@@ -139,6 +141,9 @@ Count in the extra file is optional, since there isn't always a post count for c
 
 The extra files can also be used to just add new / custom tags not included in the main set, provided `onlyAliasExtraFile` is false.
 If an extra tag doesn't match any existing tag, it will be added to the list as a new tag instead. For this, it will need to include the post count and alias columns even if they don't contain anything, so it could be in the form of `tag,type,,`.
+
+##### WARNING
+Do not use e621.csv or danbooru.csv as an extra file. Alias comparison has exponential runtime, so for the combination of danbooru+e621, it will need to do 10,000,000,000 (yes, ten billion) lookups and usually take multiple minutes to load.
 
 ## CSV tag data
 The script expects a CSV file with tags saved in the following way:
