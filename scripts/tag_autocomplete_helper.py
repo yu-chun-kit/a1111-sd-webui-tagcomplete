@@ -3,8 +3,10 @@
 
 import gradio as gr
 from pathlib import Path
-from modules import scripts, script_callbacks, shared
+from modules import scripts, script_callbacks, shared, sd_hijack
 import yaml
+import time
+import threading
 
 # Webui root path
 FILE_DIR = Path().absolute()
@@ -61,26 +63,80 @@ def get_ext_wildcard_tags():
     for path in WILDCARD_EXT_PATHS:
         yaml_files.extend(p for p in path.rglob("*.yml"))
         yaml_files.extend(p for p in path.rglob("*.yaml"))
+    count = 0
     for path in yaml_files:
         try:
             with open(path, encoding="utf8") as file:
                 data = yaml.safe_load(file)
                 for item in data:
-                    for _, tag in enumerate(data[item]['Tags']):
-                        if tag not in wildcard_tags:
-                            wildcard_tags[tag] = 1
-                        else:
-                            wildcard_tags[tag] += 1
+                    wildcard_tags[count] = ','.join(data[item]['Tags'])
+                    count += 1
         except yaml.YAMLError as exc:
             print(exc)
+    # Sort by count
+    sorted_tags = sorted(wildcard_tags.items(), key=lambda item: item[1], reverse=True)
     output = []
-    for tag, count in wildcard_tags.items():
+    for tag, count in sorted_tags:
         output.append(f"{tag},{count}")
     return output
 
+
 def get_embeddings():
-    """Returns a list of all embeddings"""
-    return [str(e.relative_to(EMB_PATH)) for e in EMB_PATH.glob("**/*") if e.suffix in {".bin", ".pt", ".png"}]
+    """Write a list of all embeddings with their version"""
+    # Get a list of all embeddings in the folder
+    embs_in_dir = [str(e.relative_to(EMB_PATH)) for e in EMB_PATH.glob("**/*") if e.suffix in {".bin", ".pt", ".png",'.webp', '.jxl', '.avif'}]
+    # Remove file extensions
+    embs_in_dir = [e[:e.rfind('.')] for e in embs_in_dir]
+
+    # Version constants
+    V1_SHAPE = 768
+    V2_SHAPE = 1024
+    emb_v1 = []
+    emb_v2 = []
+
+    try:
+        # Wait for all embeddings to be loaded
+        while len(sd_hijack.model_hijack.embedding_db.word_embeddings) + len(sd_hijack.model_hijack.embedding_db.skipped_embeddings) < len(embs_in_dir):
+            time.sleep(2)  # Sleep for 2 seconds
+
+        # Get embedding dict from sd_hijack to separate v1/v2 embeddings
+        emb_type_a = sd_hijack.model_hijack.embedding_db.word_embeddings
+        emb_type_b = sd_hijack.model_hijack.embedding_db.skipped_embeddings
+        # Get the shape of the first item in the dict
+        emb_a_shape = -1
+        emb_b_shape = -1
+        if (len(emb_type_a) > 0):
+            emb_a_shape = next(iter(emb_type_a.items()))[1].shape
+        if (len(emb_type_b) > 0):
+            emb_b_shape = next(iter(emb_type_b.items()))[1].shape
+
+        # Add embeddings to the correct list
+        if (emb_a_shape == V1_SHAPE):
+            emb_v1 = list(emb_type_a.keys())
+        elif (emb_a_shape == V2_SHAPE):
+            emb_v2 = list(emb_type_a.keys())
+
+        if (emb_b_shape == V1_SHAPE):
+            emb_v1 = list(emb_type_b.keys())
+        elif (emb_b_shape == V2_SHAPE):
+            emb_v2 = list(emb_type_b.keys())
+    except AttributeError:
+        print("tag_autocomplete_helper: Old webui version, using fallback for embedding completion.")
+
+    # Create a new list to store the modified strings
+    results = []
+  
+    # Iterate through each string in the big list
+    for string in embs_in_dir:
+        if string in emb_v1:
+            results.append(string + ",v1")
+        elif string in emb_v2:
+            results.append(string + ",v2")
+        # If the string is not in either, default to v1
+        else:
+            results.append(string + ",")
+
+    write_to_temp_file('emb.txt', results)
 
 
 def write_tag_base_path():
@@ -136,24 +192,23 @@ if WILDCARD_EXT_PATHS is not None:
     wildcards_ext = get_ext_wildcards()
     if wildcards_ext:
         write_to_temp_file('wce.txt', wildcards_ext)
-
-# Write extension wildcards to wce.txt if found
-if WILDCARD_EXT_PATHS is not None:
-    wildcards_ext = get_ext_wildcard_tags()
-    if wildcards_ext:
-        write_to_temp_file('wcet.txt', wildcards_ext)
+    # Write yaml extension wildcards to wcet.txt if found
+    wildcards_yaml_ext = get_ext_wildcard_tags()
+    if wildcards_yaml_ext:
+        write_to_temp_file('wcet.txt', wildcards_yaml_ext)
 
 # Write embeddings to emb.txt if found
 if EMB_PATH.exists():
-    embeddings = get_embeddings()
-    if embeddings:
-        write_to_temp_file('emb.txt', embeddings)
+    # We need to load the embeddings in a separate thread since we wait for them to be checked (after the model loads)
+    thread = threading.Thread(target=get_embeddings)
+    thread.start()
+        
 
 # Register autocomplete options
 def on_ui_settings():
     TAC_SECTION = ("tac", "Tag Autocomplete")
     # Main tag file
-    shared.opts.add_option("tac_tagFile", shared.OptionInfo("danbooru.csv", "Tag filename", gr.Dropdown, lambda: {"choices": csv_files}, refresh=update_tag_files, section=TAC_SECTION))
+    shared.opts.add_option("tac_tagFile", shared.OptionInfo("danbooru.csv", "Tag filename", gr.Dropdown, lambda: {"choices": csv_files_withnone}, refresh=update_tag_files, section=TAC_SECTION))
     # Active in settings
     shared.opts.add_option("tac_active", shared.OptionInfo(True, "Enable Tag Autocompletion", section=TAC_SECTION))
     shared.opts.add_option("tac_activeIn.txt2img", shared.OptionInfo(True, "Active in txt2img (Requires restart)", section=TAC_SECTION))
