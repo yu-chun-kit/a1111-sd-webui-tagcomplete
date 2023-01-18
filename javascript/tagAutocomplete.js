@@ -70,6 +70,13 @@ const autocompleteCSS = `
         flex-grow: 1;
         color: var(--meta-text-color);
     }
+    .acWikiLink {
+        padding: 0.5rem;
+        margin: -0.5rem 0 -0.5rem -0.5rem;
+    }
+    .acWikiLink:hover {
+        text-decoration: underline;
+    }
     .acListItem.acEmbeddingV1 {
         color: var(--embedding-v1-color);
     }
@@ -158,7 +165,9 @@ async function syncOptions() {
             txt2img: opts["tac_activeIn.txt2img"],
             img2img: opts["tac_activeIn.img2img"],
             negativePrompts: opts["tac_activeIn.negativePrompts"],
-            thirdParty: opts["tac_activeIn.thirdParty"]
+            thirdParty: opts["tac_activeIn.thirdParty"],
+            modelList: opts["tac_activeIn.modelList"],
+            modelListMode: opts["tac_activeIn.modelListMode"]
         },
         // Results related settings
         maxResults: opts["tac_maxResults"],
@@ -167,6 +176,7 @@ async function syncOptions() {
         delayTime: opts["tac_delayTime"],
         useWildcards: opts["tac_useWildcards"],
         useEmbeddings: opts["tac_useEmbeddings"],
+        showWikiLinks: opts["tac_showWikiLinks"],
         // Insertion related settings
         replaceUnderscores: opts["tac_replaceUnderscores"],
         escapeParentheses: opts["tac_escapeParentheses"],
@@ -254,6 +264,30 @@ function hideResults(textArea) {
     let resultsDiv = gradioApp().querySelector('.autocompleteResults' + textAreaId);
     resultsDiv.style.display = "none";
     selectedTag = null;
+}
+
+var currentModelHash = "";
+var currentModelName = "";
+// Function to check activation criteria
+function isEnabled() {
+    if (CFG.activeIn.global) {
+        let modelList = CFG.activeIn.modelList
+            .split(",")
+            .map(x => x.trim())
+            .filter(x => x.length > 0);
+        
+        let shortHash = currentModelHash.substring(0, 10);
+        if (CFG.activeIn.modelListMode.toLowerCase() === "blacklist") {
+            // If the current model is in the blacklist, disable
+            return modelList.filter(x => x === currentModelName || x === currentModelHash || x === shortHash).length === 0;
+        } else {
+            // If the current model is in the whitelist, enable.
+            // An empty whitelist is ignored.
+            return modelList.length === 0 || modelList.filter(x => x === currentModelName || x === currentModelHash || x === shortHash).length > 0;
+        }
+    } else {
+        return false;
+    }
 }
 
 const WEIGHT_REGEX = /[([]([^,()[\]:| ]+)(?::(?:\d+(?:\.\d+)?|\.\d+))?[)\]]/g;
@@ -383,7 +417,6 @@ function addResultsToList(textArea, results, tagword, resetList) {
 
         let itemText = document.createElement("div");
         itemText.classList.add("acListItem");
-        flexDiv.appendChild(itemText);
 
         let displayText = "";
         // If the tag matches the tagword, we don't need to display the alias
@@ -421,6 +454,33 @@ function addResultsToList(textArea, results, tagword, resetList) {
         // Print search term bolded in result
         itemText.innerHTML = displayText.replace(tagword, `<b>${tagword}</b>`);
 
+        // Add wiki link if the setting is enabled and a supported tag set loaded
+        if (CFG.showWikiLinks
+            && (result.type === ResultType.tag)
+            && (tagFileName.toLowerCase().startsWith("danbooru") || tagFileName.toLowerCase().startsWith("e621"))) {
+            let wikiLink = document.createElement("a");
+            wikiLink.classList.add("acWikiLink");
+            wikiLink.innerText = "?";
+
+            let linkPart = displayText;
+            // Only use alias result if it is one
+            if (displayText.includes("➝"))
+                linkPart = displayText.split(" ➝ ")[1];
+            
+            // Set link based on selected file
+            let tagFileNameLower = tagFileName.toLowerCase();
+            if (tagFileNameLower.startsWith("danbooru")) {
+                wikiLink.href = `https://danbooru.donmai.us/wiki_pages/${linkPart}`;
+            } else if (tagFileNameLower.startsWith("e621")) {
+                wikiLink.href = `https://e621.net/wiki_pages/${linkPart}`;
+            }
+            
+            wikiLink.target = "_blank";
+            flexDiv.appendChild(wikiLink);
+        }
+
+        flexDiv.appendChild(itemText);
+
         // Add post count & color if it's a tag
         // Wildcards & Embeds have no tag category
         if (![ResultType.wildcardFile, ResultType.wildcardTag, ResultType.embedding].includes(result.type)) {
@@ -436,7 +496,7 @@ function addResultsToList(textArea, results, tagword, resetList) {
                 if (!colorGroup[cat])
                     cat = "-1";
 
-                itemText.style = `color: ${colorGroup[cat][mode]};`;
+                flexDiv.style = `color: ${colorGroup[cat][mode]};`;
             }
 
             // Post count
@@ -514,11 +574,13 @@ var originalTagword = "";
 var resultCount = 0;
 async function autocomplete(textArea, prompt, fixedTag = null) {
     // Return if the function is deactivated in the UI
-    if (!CFG.activeIn.global) return;
+    if (!isEnabled()) return;
 
     // Guard for empty prompt
     if (prompt.length === 0) {
         hideResults(textArea);
+        previousTags = [];
+        tagword = "";
         return;
     }
 
@@ -531,6 +593,14 @@ async function autocomplete(textArea, prompt, fixedTag = null) {
         if (weightedTags !== null && tags !== null) {
             tags = tags.filter(tag => !weightedTags.some(weighted => tag.includes(weighted) && !tag.startsWith("<[")))
                 .concat(weightedTags);
+        }
+
+        // Guard for no tags
+        if (!tags || tags.length === 0) {
+            previousTags = [];
+            tagword = "";
+            hideResults(textArea);
+            return;
         }
 
         let tagCountChange = tags.length - previousTags.length;
@@ -859,8 +929,8 @@ async function autocomplete(textArea, prompt, fixedTag = null) {
 
 var oldSelectedTag = null;
 function navigateInList(textArea, event) {
-    // Return if the function is deactivated in the UI
-    if (!CFG.activeIn.global) return;
+    // Return if the function is deactivated in the UI or the current model is excluded due to white/blacklist settings
+    if (!isEnabled()) return;
 
     validKeys = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", "Enter", "Tab", "Escape"];
 
@@ -1032,6 +1102,28 @@ async function setup() {
             }, 500);
         });
     });
+
+    // Add change listener to model dropdown to react to model changes
+    let modelDropdown = gradioApp().querySelector("#setting_sd_model_checkpoint select");
+    currentModelName = modelDropdown.value;
+    modelDropdown.addEventListener("change", () => {
+        setTimeout(() => {
+            currentModelName = modelDropdown.value;
+        }, 100);
+    });
+    // Add mutation observer for the model hash text to also allow hash-based blacklist again
+    let modelHashText = gradioApp().querySelector("#sd_checkpoint_hash");
+    if (modelHashText) {
+        currentModelHash = modelHashText.title
+        let modelHashObserver = new MutationObserver((mutationList, observer) => {
+            for (const mutation of mutationList) {
+                if (mutation.type === "attributes" && mutation.attributeName === "title") {
+                    currentModelHash = mutation.target.title;
+                }
+            }
+        });
+        modelHashObserver.observe(modelHashText, { attributes: true });
+    }
 
     // Not found, we're on a page without prompt textareas
     if (textAreas.every(v => v === null || v === undefined)) return;
