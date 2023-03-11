@@ -5,8 +5,6 @@ import gradio as gr
 from pathlib import Path
 from modules import scripts, script_callbacks, shared, sd_hijack
 import yaml
-import time
-import threading
 
 # Webui root path
 FILE_DIR = Path().absolute()
@@ -151,7 +149,7 @@ def get_hypernetworks():
     # Get a list of all hypernetworks in the folder
     all_hypernetworks = [str(h.name) for h in HYP_PATH.rglob("*") if h.suffix in {".pt"}]
     # Remove file extensions
-    return [h[:h.rfind('.')] for h in all_hypernetworks]
+    return sorted([h[:h.rfind('.')] for h in all_hypernetworks], key=lambda x: x.lower())
 
 def get_lora():
     """Write a list of all lora"""
@@ -159,7 +157,7 @@ def get_lora():
     # Get a list of all lora in the folder
     all_lora = [str(l.name) for l in LORA_PATH.rglob("*") if l.suffix in {".safetensors", ".ckpt", ".pt"}]
     # Remove file extensions
-    return [l[:l.rfind('.')] for l in all_lora]
+    return sorted([l[:l.rfind('.')] for l in all_lora], key=lambda x: x.lower())
 
 
 def write_tag_base_path():
@@ -253,6 +251,7 @@ def on_ui_settings():
     shared.opts.add_option("tac_activeIn.modelList", shared.OptionInfo("", "List of model names (with file extension) or their hashes to use as black/whitelist, separated by commas.", section=TAC_SECTION))
     shared.opts.add_option("tac_activeIn.modelListMode", shared.OptionInfo("Blacklist", "Mode to use for model list", gr.Dropdown, lambda: {"choices": ["Blacklist","Whitelist"]}, section=TAC_SECTION))
     # Results related settings
+    shared.opts.add_option("tac_slidingPopup", shared.OptionInfo(True, "Move completion popup together with text cursor", section=TAC_SECTION))
     shared.opts.add_option("tac_maxResults", shared.OptionInfo(5, "Maximum results", section=TAC_SECTION))
     shared.opts.add_option("tac_showAllResults", shared.OptionInfo(False, "Show all results", section=TAC_SECTION))
     shared.opts.add_option("tac_resultStepLength", shared.OptionInfo(100, "How many results to load at once", section=TAC_SECTION))

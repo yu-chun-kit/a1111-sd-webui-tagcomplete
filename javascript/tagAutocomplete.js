@@ -1,4 +1,4 @@
-const styleColors = {
+﻿const styleColors = {
     "--results-bg": ["#0b0f19", "#ffffff"],
     "--results-border-color": ["#4b5563", "#e5e7eb"],
     "--results-border-width": ["1px", "1.5px"],
@@ -137,6 +137,7 @@ async function syncOptions() {
             modelListMode: opts["tac_activeIn.modelListMode"]
         },
         // Results related settings
+        slidingPopup: opts["tac_slidingPopup"],
         maxResults: opts["tac_maxResults"],
         showAllResults: opts["tac_showAllResults"],
         resultStepLength: opts["tac_resultStepLength"],
@@ -228,6 +229,16 @@ function showResults(textArea) {
     let textAreaId = getTextAreaIdentifier(textArea);
     let resultsDiv = gradioApp().querySelector('.autocompleteResults' + textAreaId);
     resultsDiv.style.display = "block";
+
+    if (CFG.slidingPopup) {
+        let caretPosition = getCaretCoordinates(textArea, textArea.selectionEnd).left;
+        let offset = Math.min(textArea.offsetLeft - textArea.scrollLeft + caretPosition, textArea.offsetWidth - resultsDiv.offsetWidth);
+    
+        resultsDiv.style.left = `${offset}px`;
+    } else {
+        if (resultsDiv.style.left)
+            resultsDiv.style.removeProperty("left");
+    }
 }
 function hideResults(textArea) {
     let textAreaId = getTextAreaIdentifier(textArea);
