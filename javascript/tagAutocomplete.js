@@ -206,14 +206,15 @@ async function syncOptions() {
 // Create the result list div and necessary styling
 function createResultsDiv(textArea) {
     let resultsDiv = document.createElement("div");
-    let resultsList = document.createElement('ul');
+    let resultsList = document.createElement("ul");
 
     let textAreaId = getTextAreaIdentifier(textArea);
     let typeClass = textAreaId.replaceAll(".", " ");
 
     resultsDiv.style.maxHeight = `${CFG.maxResults * 50}px`;
-    resultsDiv.setAttribute('class', `autocompleteResults ${typeClass}`);
-    resultsList.setAttribute('class', 'autocompleteResultsList');
+    resultsDiv.setAttribute("class", `autocompleteResults ${typeClass} notranslate`);
+    resultsDiv.setAttribute("translate", "no");
+    resultsList.setAttribute("class", "autocompleteResultsList");
     resultsDiv.appendChild(resultsList);
 
     return resultsDiv;
@@ -243,6 +244,9 @@ function showResults(textArea) {
 function hideResults(textArea) {
     let textAreaId = getTextAreaIdentifier(textArea);
     let resultsDiv = gradioApp().querySelector('.autocompleteResults' + textAreaId);
+    
+    if (!resultsDiv) return;
+    
     resultsDiv.style.display = "none";
     selectedTag = null;
 }
@@ -250,29 +254,33 @@ function hideResults(textArea) {
 // Function to check activation criteria
 function isEnabled() {
     if (CFG.activeIn.global) {
+        // Skip check if the current model was not correctly detected, since it could wrongly disable the script otherwise
+        if (!currentModelName || !currentModelHash) return true;
+        
         let modelList = CFG.activeIn.modelList
             .split(",")
             .map(x => x.trim())
             .filter(x => x.length > 0);
         
         let shortHash = currentModelHash.substring(0, 10);
+        let modelNameWithoutHash = currentModelName.replace(/\[.*\]$/g, "").trim();
         if (CFG.activeIn.modelListMode.toLowerCase() === "blacklist") {
             // If the current model is in the blacklist, disable
-            return modelList.filter(x => x === currentModelName || x === currentModelHash || x === shortHash).length === 0;
+            return modelList.filter(x => x === currentModelName || x === modelNameWithoutHash || x === currentModelHash || x === shortHash).length === 0;
         } else {
             // If the current model is in the whitelist, enable.
             // An empty whitelist is ignored.
-            return modelList.length === 0 || modelList.filter(x => x === currentModelName || x === currentModelHash || x === shortHash).length > 0;
+            return modelList.length === 0 || modelList.filter(x => x === currentModelName || x === modelNameWithoutHash || x === currentModelHash || x === shortHash).length > 0;
         }
     } else {
         return false;
     }
 }
 
-const WEIGHT_REGEX = /[([]([^,()[\]:| ]+)(?::(?:\d+(?:\.\d+)?|\.\d+))?[)\]]/g;
+const WEIGHT_REGEX = /[([]([^()[\]:|]+)(?::(?:\d+(?:\.\d+)?|\.\d+))?[)\]]/g;
 const POINTY_REGEX = /<[^\s,<](?:[^\t\n\r,<>]*>|[^\t\n\r,> ]*)/g;
 const COMPLETED_WILDCARD_REGEX = /__[^\s,_][^\t\n\r,_]*[^\s,_]__[^\s,_]*/g;
-const NORMAL_TAG_REGEX = /[^\s,|<>]+|</g;
+const NORMAL_TAG_REGEX = /[^\s,|<>)\]]+|</g;
 const TAG_REGEX = new RegExp(`${POINTY_REGEX.source}|${COMPLETED_WILDCARD_REGEX.source}|${NORMAL_TAG_REGEX.source}`, "g");
 
 // On click, insert the tag into the prompt textbox with respect to the cursor position
@@ -748,6 +756,9 @@ function navigateInList(textArea, event) {
         case keymap["ChooseSelected"]:
             if (selectedTag !== null) {
                 insertTextAtCursor(textArea, results[selectedTag], tagword);
+            } else {
+                hideResults(textArea);
+                return;
             }
             break;
         case keymap["ChooseFirstOrSelected"]:
@@ -806,14 +817,6 @@ async function setup() {
         });
     });
 
-    // Add change listener to model dropdown to react to model changes
-    let modelDropdown = gradioApp().querySelector("#setting_sd_model_checkpoint select");
-    currentModelName = modelDropdown.value;
-    modelDropdown?.addEventListener("change", () => {
-        setTimeout(() => {
-            currentModelName = modelDropdown.value;
-        }, 100);
-    });
     // Add mutation observer for the model hash text to also allow hash-based blacklist again
     let modelHashText = gradioApp().querySelector("#sd_checkpoint_hash");
     if (modelHashText) {
@@ -822,6 +825,14 @@ async function setup() {
             for (const mutation of mutationList) {
                 if (mutation.type === "attributes" && mutation.attributeName === "title") {
                     currentModelHash = mutation.target.title;
+                    let modelDropdown = gradioApp().querySelector("#setting_sd_model_checkpoint span.single-select")
+                    if (modelDropdown) {
+                        currentModelName = modelDropdown.textContent;
+                    } else {
+                        // Fallback for older versions
+                        modelDropdown = gradioApp().querySelector("#setting_sd_model_checkpoint select");
+                        currentModelName = modelDropdown.value;
+                    }
                 }
             }
         });

@@ -6,11 +6,18 @@ from pathlib import Path
 from modules import scripts, script_callbacks, shared, sd_hijack
 import yaml
 
-# Webui root path
-FILE_DIR = Path().absolute()
+try:
+    from modules.paths import script_path, extensions_dir
+    # Webui root path
+    FILE_DIR = Path(script_path)
 
-# The extension base path
-EXT_PATH = FILE_DIR.joinpath('extensions')
+    # The extension base path
+    EXT_PATH = Path(extensions_dir)
+except ImportError:
+    # Webui root path
+    FILE_DIR = Path().absolute()
+    # The extension base path
+    EXT_PATH = FILE_DIR.joinpath('extensions')
 
 # Tags base path
 TAGS_PATH = Path(scripts.basedir()).joinpath('tags')
