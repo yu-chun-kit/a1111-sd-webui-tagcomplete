@@ -31,6 +31,11 @@ try:
     LORA_PATH = Path(shared.cmd_opts.lora_dir)
 except AttributeError:
     LORA_PATH = None
+    
+try:
+    LYCO_PATH = Path(shared.cmd_opts.lyco_dir)
+except AttributeError:
+    LYCO_PATH = None
 
 def find_ext_wildcard_paths():
     """Returns the path to the extension wildcards folder"""
@@ -166,6 +171,13 @@ def get_lora():
     # Remove file extensions
     return sorted([l[:l.rfind('.')] for l in all_lora], key=lambda x: x.lower())
 
+def get_lyco():
+    """Write a list of all LyCORIS/LOHA from https://github.com/KohakuBlueleaf/a1111-sd-webui-lycoris"""
+
+    # Get a list of all LyCORIS in the folder
+    all_lyco = [str(ly.name) for ly in LYCO_PATH.rglob("*") if ly.suffix in {".safetensors", ".ckpt", ".pt"}]
+    # Remove file extensions
+    return sorted([ly[:ly.rfind('.')] for ly in all_lyco], key=lambda x: x.lower())
 
 def write_tag_base_path():
     """Writes the tag base path to a fixed location temporary file"""
@@ -209,6 +221,7 @@ write_to_temp_file('wce.txt', [])
 write_to_temp_file('wcet.txt', [])
 write_to_temp_file('hyp.txt', [])
 write_to_temp_file('lora.txt', [])
+write_to_temp_file('lyco.txt', [])
 # Only reload embeddings if the file doesn't exist, since they are already re-written on model load
 if not TEMP_PATH.joinpath("emb.txt").exists():
     write_to_temp_file('emb.txt', [])
@@ -244,6 +257,11 @@ if LORA_PATH is not None and LORA_PATH.exists():
     if lora:
         write_to_temp_file('lora.txt', lora)
 
+if LYCO_PATH is not None and LYCO_PATH.exists():
+    lyco = get_lyco()
+    if lyco:
+        write_to_temp_file('lyco.txt', lyco)
+
 # Register autocomplete options
 def on_ui_settings():
     TAC_SECTION = ("tac", "Tag Autocomplete")
@@ -267,6 +285,7 @@ def on_ui_settings():
     shared.opts.add_option("tac_useEmbeddings", shared.OptionInfo(True, "Search for embeddings", section=TAC_SECTION))
     shared.opts.add_option("tac_useHypernetworks", shared.OptionInfo(True, "Search for hypernetworks", section=TAC_SECTION))
     shared.opts.add_option("tac_useLoras", shared.OptionInfo(True, "Search for Loras", section=TAC_SECTION))
+    shared.opts.add_option("tac_useLycos", shared.OptionInfo(True, "Search for LyCORIS/LoHa", section=TAC_SECTION))
     shared.opts.add_option("tac_showWikiLinks", shared.OptionInfo(False, "Show '?' next to tags, linking to its Danbooru or e621 wiki page (Warning: This is an external site and very likely contains NSFW examples!)", section=TAC_SECTION))
     # Insertion related settings
     shared.opts.add_option("tac_replaceUnderscores", shared.OptionInfo(True, "Replace underscores with spaces on insertion", section=TAC_SECTION))
@@ -282,5 +301,52 @@ def on_ui_settings():
     # Extra file settings
     shared.opts.add_option("tac_extra.extraFile", shared.OptionInfo("extra-quality-tags.csv", "Extra filename (for small sets of custom tags)", gr.Dropdown, lambda: {"choices": csv_files_withnone}, refresh=update_tag_files, section=TAC_SECTION))
     shared.opts.add_option("tac_extra.addMode", shared.OptionInfo("Insert before", "Mode to add the extra tags to the main tag list", gr.Dropdown, lambda: {"choices": ["Insert before","Insert after"]}, section=TAC_SECTION))
+    # Custom mappings
+    keymapDefault = """\
+{
+    "MoveUp": "ArrowUp",
+    "MoveDown": "ArrowDown",
+    "JumpUp": "PageUp",
+    "JumpDown": "PageDown",
+    "JumpToStart": "Home",
+    "JumpToEnd": "End",
+    "ChooseSelected": "Enter",
+    "ChooseFirstOrSelected": "Tab",
+    "Close": "Escape"
+}\
+"""
+    colorDefault = """\
+{
+    "danbooru": {
+        "-1": ["red", "maroon"],
+        "0": ["lightblue", "dodgerblue"],
+        "1": ["indianred", "firebrick"],
+        "3": ["violet", "darkorchid"],
+        "4": ["lightgreen", "darkgreen"],
+        "5": ["orange", "darkorange"]
+    },
+    "e621": {
+        "-1": ["red", "maroon"],
+        "0": ["lightblue", "dodgerblue"],
+        "1": ["gold", "goldenrod"],
+        "3": ["violet", "darkorchid"],
+        "4": ["lightgreen", "darkgreen"],
+        "5": ["tomato", "darksalmon"],
+        "6": ["red", "maroon"],
+        "7": ["whitesmoke", "black"],
+        "8": ["seagreen", "darkseagreen"]
+    }
+}\
+"""
+    keymapLabel = "Configure Hotkeys. For possible values, see https://www.w3.org/TR/uievents-key, or leave empty / set to 'None' to disable. Must be valid JSON."
+    colorLabel = "Configure colors. See https://github.com/DominikDoom/a1111-sd-webui-tagcomplete#colors for info. Must be valid JSON."
+
+    try:
+        shared.opts.add_option("tac_keymap", shared.OptionInfo(keymapDefault, keymapLabel, gr.Code, lambda: {"language": "json", "interactive": True}, section=TAC_SECTION))
+        shared.opts.add_option("tac_colormap", shared.OptionInfo(colorDefault, colorLabel, gr.Code, lambda: {"language": "json", "interactive": True}, section=TAC_SECTION))
+    except AttributeError:
+        shared.opts.add_option("tac_keymap", shared.OptionInfo(keymapDefault, keymapLabel, gr.Textbox, section=TAC_SECTION))
+        shared.opts.add_option("tac_colormap", shared.OptionInfo(colorDefault, colorLabel, gr.Textbox, section=TAC_SECTION))
+
 
 script_callbacks.on_ui_settings(on_ui_settings)

@@ -1,7 +1,6 @@
 // Core components
 var CFG = null;
 var tagBasePath = "";
-var keymap = null;
 
 // Tag completion data loaded from files
 var allTags = [];
@@ -14,6 +13,7 @@ var yamlWildcards = [];
 var embeddings = [];
 var hypernetworks = [];
 var loras = [];
+var lycos = [];
 
 // Selected model info for black/whitelisting
 var currentModelHash = "";
