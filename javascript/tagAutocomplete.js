@@ -20,10 +20,6 @@ const autocompleteCSS = `
     #quicksettings [id^=setting_tac] {
         background-color: transparent;
         min-width: fit-content;
-        align-self: center;
-    }
-    #quicksettings [id^=setting_tac] > label > span {
-        margin-bottom: 0px;
     }
     .autocompleteResults {
         position: absolute;
@@ -90,9 +86,17 @@ async function loadTags(c) {
             return;
         }
     }
+    await loadExtraTags(c);
+}
+
+async function loadExtraTags(c) {
     if (c.extra.extraFile && c.extra.extraFile !== "None") {
         try {
             extras = await loadCSV(`${tagBasePath}/${c.extra.extraFile}`);
+            // Add translations to the main translation map for extra tags that have them
+            extras.forEach(e => {
+                if (e[4]) translations.set(e[0], e[4]);
+            });
         } catch (e) {
             console.error("Error loading extra file: " + e);
             return;
@@ -141,7 +145,7 @@ async function syncOptions() {
         useEmbeddings: opts["tac_useEmbeddings"],
         useHypernetworks: opts["tac_useHypernetworks"],
         useLoras: opts["tac_useLoras"],
-	useLycos: opts["tac_useLycos"],
+	    useLycos: opts["tac_useLycos"],
         showWikiLinks: opts["tac_showWikiLinks"],
         // Insertion related settings
         replaceUnderscores: opts["tac_replaceUnderscores"],
@@ -163,6 +167,8 @@ async function syncOptions() {
             extraFile: opts["tac_extra.extraFile"],
             addMode: opts["tac_extra.addMode"]
         },
+        // Chant file settings
+        chantFile: opts["tac_chantFile"],
         // Settings not from tac but still used by the script
         extraNetworksDefaultMultiplier: opts["extra_networks_default_multiplier"],
         extraNetworksSeparator: opts["extra_networks_add_text_separator"],
@@ -170,30 +176,32 @@ async function syncOptions() {
         keymap: JSON.parse(opts["tac_keymap"]),
         colorMap: JSON.parse(opts["tac_colormap"])
     }
+
     if (newCFG.alias.onlyShowAlias) {
         newCFG.alias.searchByAlias = true; // if only show translation, enable search by translation is necessary
     }
 
-    // Reload tags if the tag file changed
-    if (!CFG || newCFG.tagFile !== CFG.tagFile || newCFG.extra.extraFile !== CFG.extra.extraFile) {
+    // Reload translations if the translation file changed
+    if (!TAC_CFG || newCFG.translation.translationFile !== TAC_CFG.translation.translationFile) {
+        translations.clear();
+        await loadTranslations(newCFG);
+        await loadExtraTags(newCFG);
+    }
+    // Reload tags if the tag file changed (after translations so extra tag translations get re-added)
+    if (!TAC_CFG || newCFG.tagFile !== TAC_CFG.tagFile || newCFG.extra.extraFile !== TAC_CFG.extra.extraFile) {
         allTags = [];
         await loadTags(newCFG);
     }
-    // Reload translations if the translation file changed
-    if (!CFG || newCFG.translation.translationFile !== CFG.translation.translationFile) {
-        translations.clear();
-        await loadTranslations(newCFG);
-    }
 
     // Update CSS if maxResults changed
-    if (CFG && newCFG.maxResults !== CFG.maxResults) {
+    if (TAC_CFG && newCFG.maxResults !== TAC_CFG.maxResults) {
         gradioApp().querySelectorAll(".autocompleteResults").forEach(r => {
             r.style.maxHeight = `${newCFG.maxResults * 50}px`;
         });
     }
 
     // Apply changes
-    CFG = newCFG;
+    TAC_CFG = newCFG;
 
     // Callback
     await processQueue(QUEUE_AFTER_CONFIG_CHANGE, null);
@@ -207,7 +215,7 @@ function createResultsDiv(textArea) {
     let textAreaId = getTextAreaIdentifier(textArea);
     let typeClass = textAreaId.replaceAll(".", " ");
 
-    resultsDiv.style.maxHeight = `${CFG.maxResults * 50}px`;
+    resultsDiv.style.maxHeight = `${TAC_CFG.maxResults * 50}px`;
     resultsDiv.setAttribute("class", `autocompleteResults ${typeClass} notranslate`);
     resultsDiv.setAttribute("translate", "no");
     resultsList.setAttribute("class", "autocompleteResultsList");
@@ -227,7 +235,7 @@ function showResults(textArea) {
     let resultsDiv = gradioApp().querySelector('.autocompleteResults' + textAreaId);
     resultsDiv.style.display = "block";
 
-    if (CFG.slidingPopup) {
+    if (TAC_CFG.slidingPopup) {
         let caretPosition = getCaretCoordinates(textArea, textArea.selectionEnd).left;
         let offset = Math.min(textArea.offsetLeft - textArea.scrollLeft + caretPosition, textArea.offsetWidth - resultsDiv.offsetWidth);
     
@@ -236,6 +244,8 @@ function showResults(textArea) {
         if (resultsDiv.style.left)
             resultsDiv.style.removeProperty("left");
     }
+    // Reset here too to make absolutely sure the browser registers it
+    resultsDiv.scrollTop = 0;
 }
 function hideResults(textArea) {
     let textAreaId = getTextAreaIdentifier(textArea);
@@ -249,18 +259,18 @@ function hideResults(textArea) {
 
 // Function to check activation criteria
 function isEnabled() {
-    if (CFG.activeIn.global) {
+    if (TAC_CFG.activeIn.global) {
         // Skip check if the current model was not correctly detected, since it could wrongly disable the script otherwise
         if (!currentModelName || !currentModelHash) return true;
         
-        let modelList = CFG.activeIn.modelList
+        let modelList = TAC_CFG.activeIn.modelList
             .split(",")
             .map(x => x.trim())
             .filter(x => x.length > 0);
         
         let shortHash = currentModelHash.substring(0, 10);
         let modelNameWithoutHash = currentModelName.replace(/\[.*\]$/g, "").trim();
-        if (CFG.activeIn.modelListMode.toLowerCase() === "blacklist") {
+        if (TAC_CFG.activeIn.modelListMode.toLowerCase() === "blacklist") {
             // If the current model is in the blacklist, disable
             return modelList.filter(x => x === currentModelName || x === modelNameWithoutHash || x === currentModelHash || x === shortHash).length === 0;
         } else {
@@ -293,9 +303,9 @@ async function insertTextAtCursor(textArea, result, tagword) {
     if (sanitizeResults && sanitizeResults.length > 0) {
         sanitizedText = sanitizeResults[0];
     } else {
-        sanitizedText = CFG.replaceUnderscores ? text.replaceAll("_", " ") : text;
+        sanitizedText = TAC_CFG.replaceUnderscores ? text.replaceAll("_", " ") : text;
 
-        if (CFG.escapeParentheses && tagType === ResultType.tag) {
+        if (TAC_CFG.escapeParentheses && tagType === ResultType.tag) {
             sanitizedText = sanitizedText
                 .replaceAll("(", "\\(")
                 .replaceAll(")", "\\)")
@@ -316,11 +326,11 @@ async function insertTextAtCursor(textArea, result, tagword) {
     var optionalSeparator = "";
     let extraNetworkTypes = [ResultType.hypernetwork, ResultType.lora];
     let noCommaTypes = [ResultType.wildcardFile, ResultType.yamlWildcard].concat(extraNetworkTypes);
-    if (CFG.appendComma && !noCommaTypes.includes(tagType)) {
+    if (TAC_CFG.appendComma && !noCommaTypes.includes(tagType)) {
         optionalSeparator = surrounding.match(new RegExp(`${escapeRegExp(tagword)}[,:]`, "i")) !== null ? "" : ", ";
     } else if (extraNetworkTypes.includes(tagType)) {
         // Use the dedicated separator for extra networks if it's defined, otherwise fall back to space
-        optionalSeparator = CFG.extraNetworksSeparator || " ";
+        optionalSeparator = TAC_CFG.extraNetworksSeparator || " ";
     }
 
     // Replace partial tag word with new text, add comma if needed
@@ -367,15 +377,16 @@ function addResultsToList(textArea, results, tagword, resetList) {
     if (resetList) {
         resultsList.innerHTML = "";
         selectedTag = null;
+        oldSelectedTag = null;
         resultDiv.scrollTop = 0;
         resultCount = 0;
     }
 
     // Find right colors from config
-    let tagFileName = CFG.tagFile.split(".")[0];
-    let tagColors = CFG.colorMap;
-    let mode = gradioApp().querySelector('.dark') ? 0 : 1;
-    let nextLength = Math.min(results.length, resultCount + CFG.resultStepLength);
+    let tagFileName = TAC_CFG.tagFile.split(".")[0];
+    let tagColors = TAC_CFG.colorMap;
+    let mode = (document.querySelector(".dark") || gradioApp().querySelector(".dark")) ? 0 : 1;
+    let nextLength = Math.min(results.length, resultCount + TAC_CFG.resultStepLength);
 
     for (let i = resultCount; i < nextLength; i++) {
         let result = results[i];
@@ -395,7 +406,9 @@ function addResultsToList(textArea, results, tagword, resetList) {
 
         let displayText = "";
         // If the tag matches the tagword, we don't need to display the alias
-        if (result.aliases && !result.text.includes(tagword)) { // Alias
+        if(result.type === ResultType.chant) {
+            displayText = escapeHTML(result.aliases);
+        } else if (result.aliases && !result.text.includes(tagword)) { // Alias
             let splitAliases = result.aliases.split(",");
             let bestAlias = splitAliases.find(a => a.toLowerCase().includes(tagword));
 
@@ -416,7 +429,7 @@ function addResultsToList(textArea, results, tagword, resetList) {
             if (translations.has(bestAlias) && translations.get(bestAlias) !== bestAlias && bestAlias !== result.text)
                 displayText += `[${translations.get(bestAlias)}]`;
 
-            if (!CFG.alias.onlyShowAlias && result.text !== bestAlias)
+            if (!TAC_CFG.alias.onlyShowAlias && result.text !== bestAlias)
                 displayText += " ➝ " + result.text;
         } else { // No alias
             displayText = escapeHTML(result.text);
@@ -430,7 +443,7 @@ function addResultsToList(textArea, results, tagword, resetList) {
         itemText.innerHTML = displayText.replace(tagword, `<b>${tagword}</b>`);
 
         // Add wiki link if the setting is enabled and a supported tag set loaded
-        if (CFG.showWikiLinks
+        if (TAC_CFG.showWikiLinks
             && (result.type === ResultType.tag)
             && (tagFileName.toLowerCase().startsWith("danbooru") || tagFileName.toLowerCase().startsWith("e621"))) {
             let wikiLink = document.createElement("a");
@@ -513,8 +526,11 @@ function addResultsToList(textArea, results, tagword, resetList) {
     }
     resultCount = nextLength;
 
-    if (resetList)
+    if (resetList) {
+        selectedTag = null;
+        oldSelectedTag = null;
         resultDiv.scrollTop = 0;
+    }
 }
 
 function updateSelectionStyle(textArea, newIndex, oldIndex) {
@@ -533,7 +549,7 @@ function updateSelectionStyle(textArea, newIndex, oldIndex) {
     }
 
     // Set scrolltop to selected item if we are showing more than max results
-    if (items.length > CFG.maxResults) {
+    if (items.length > TAC_CFG.maxResults) {
         let selected = items[newIndex];
         resultDiv.scrollTop = selected.offsetTop - resultDiv.offsetTop;
     }
@@ -604,7 +620,11 @@ async function autocomplete(textArea, prompt, fixedTag = null) {
         // instead of having them added in the order of the parsers
         let shouldSort = resultCandidates.length > 1;
         if (shouldSort) {
-            results = results.sort((a, b) => a.text.localeCompare(b.text));
+            results = results.sort((a, b) => {
+                let sortByA = a.type === ResultType.chant ? a.aliases : a.text;
+                let sortByB = b.type === ResultType.chant ? b.aliases : b.text;
+                return sortByA.localeCompare(sortByB);
+            });
 
             // Since some tags are kaomoji, we have to add the normal results in some cases
             if (tagword.startsWith("<") || tagword.startsWith("*<")) {
@@ -616,7 +636,7 @@ async function autocomplete(textArea, prompt, fixedTag = null) {
                 } else {
                     searchRegex = new RegExp(`(^|[^a-zA-Z])${escapeRegExp(tagword)}`, 'i');
                 }
-                let genericResults = allTags.filter(x => x[0].toLowerCase().search(searchRegex) > -1).slice(0, CFG.maxResults);
+                let genericResults = allTags.filter(x => x[0].toLowerCase().search(searchRegex) > -1).slice(0, TAC_CFG.maxResults);
 
                 genericResults.forEach(g => {
                     let result = new AutocompleteResult(g[0].trim(), ResultType.tag)
@@ -644,11 +664,11 @@ async function autocomplete(textArea, prompt, fixedTag = null) {
             || x[3] && x[3].split(",").some(y => translations.has(y) && translations.get(y).toLowerCase().search(searchRegex) > -1);
         
         let fil;
-        if (CFG.alias.searchByAlias && CFG.translation.searchByTranslation)
+        if (TAC_CFG.alias.searchByAlias && TAC_CFG.translation.searchByTranslation)
             fil = (x) => baseFilter(x) || aliasFilter(x) || translationFilter(x);
-        else if (CFG.alias.searchByAlias && !CFG.translation.searchByTranslation)
+        else if (TAC_CFG.alias.searchByAlias && !TAC_CFG.translation.searchByTranslation)
             fil = (x) => baseFilter(x) || aliasFilter(x);
-        else if (CFG.translation.searchByTranslation && !CFG.alias.searchByAlias)
+        else if (TAC_CFG.translation.searchByTranslation && !TAC_CFG.alias.searchByAlias)
             fil = (x) => baseFilter(x) || translationFilter(x);
         else
             fil = (x) => baseFilter(x);
@@ -663,7 +683,7 @@ async function autocomplete(textArea, prompt, fixedTag = null) {
         });
 
         // Add extras
-        if (CFG.extra.extraFile) {
+        if (TAC_CFG.extra.extraFile) {
             let extraResults = [];
 
             extras.filter(fil).forEach(e => {
@@ -674,7 +694,7 @@ async function autocomplete(textArea, prompt, fixedTag = null) {
                 extraResults.push(result);
             });
 
-            if (CFG.extra.addMode === "Insert before") {
+            if (TAC_CFG.extra.addMode === "Insert before") {
                 results = extraResults.concat(results);
             } else {
                 results = results.concat(extraResults);
@@ -682,8 +702,8 @@ async function autocomplete(textArea, prompt, fixedTag = null) {
         }
         
         // Slice if the user has set a max result count
-        if (!CFG.showAllResults) {
-            results = results.slice(0, CFG.maxResults);
+        if (!TAC_CFG.showAllResults) {
+            results = results.slice(0, TAC_CFG.maxResults);
         }
     }
 
@@ -702,7 +722,7 @@ function navigateInList(textArea, event) {
     // Return if the function is deactivated in the UI or the current model is excluded due to white/blacklist settings
     if (!isEnabled()) return;
     
-    let keys = CFG.keymap;
+    let keys = TAC_CFG.keymap;
 
     // Close window if Home or End is pressed while not a keybinding, since it would break completion on leaving the original tag
     if ((event.key === "Home" || event.key === "End") && !Object.values(keys).includes(event.key)) {
@@ -774,8 +794,8 @@ function navigateInList(textArea, event) {
             hideResults(textArea);
             break;
     }
-    if (selectedTag === resultCount - 1
-        && (event.key === keys["MoveUp"] || event.key === keys["MoveDown"] || event.key === keys["JumpToStart"] || event.key === keys["JumpToEnd"])) {
+    let moveKeys = [keys["MoveUp"], keys["MoveDown"], keys["JumpUp"], keys["JumpDown"], keys["JumpToStart"], keys["JumpToEnd"]];
+    if (selectedTag === resultCount - 1 && moveKeys.includes(event.key)) {
         addResultsToList(textArea, results, tagword, false);
     }
     // Update highlighting
@@ -787,6 +807,42 @@ function navigateInList(textArea, event) {
     event.stopPropagation();
 }
 
+function addAutocompleteToArea(area) {
+    // Return if autocomplete is disabled for the current area type in config
+    let textAreaId = getTextAreaIdentifier(area);
+    if ((!TAC_CFG.activeIn.img2img && textAreaId.includes("img2img"))
+        || (!TAC_CFG.activeIn.txt2img && textAreaId.includes("txt2img"))
+        || (!TAC_CFG.activeIn.negativePrompts && textAreaId.includes("n"))
+        || (!TAC_CFG.activeIn.thirdParty && textAreaId.includes("thirdParty"))) {
+        return;
+    }
+
+    // Only add listeners once
+    if (!area.classList.contains('autocomplete')) {
+        // Add our new element
+        var resultsDiv = createResultsDiv(area);
+        area.parentNode.insertBefore(resultsDiv, area.nextSibling);
+        // Hide by default so it doesn't show up on page load
+        hideResults(area);
+
+        // Add autocomplete event listener
+        area.addEventListener('input', debounce(() => autocomplete(area, area.value), TAC_CFG.delayTime));
+        // Add focusout event listener
+        area.addEventListener('focusout', debounce(() => hideResults(area), 400));
+        // Add up and down arrow event listener
+        area.addEventListener('keydown', (e) => navigateInList(area, e));
+        // CompositionEnd fires after the user has finished IME composing
+        // We need to block hide here to prevent the enter key from insta-closing the results
+        area.addEventListener('compositionend', () => {
+            hideBlocked = true;
+            setTimeout(() => { hideBlocked = false; }, 100);
+        });
+
+        // Add class so we know we've already added the listeners
+        area.classList.add('autocomplete');
+    }
+}
+
 // One-time setup, triggered from onUiUpdate
 async function setup() {
     // Load external files needed by completion extensions
@@ -794,6 +850,9 @@ async function setup() {
 
     // Find all textareas
     let textAreas = getTextAreas();
+
+    // Add mutation observer to accordions inside a base that has onDemand set to true
+    addOnDemandObservers(addAutocompleteToArea);
 
     // Add event listener to apply settings button so we can mirror the changes to our internal config
     let applySettingsButton = gradioApp().querySelector("#tab_settings #settings_submit") || gradioApp().querySelector("#tab_settings > div > .gr-button-primary");
@@ -805,7 +864,7 @@ async function setup() {
     });
     // Add change listener to our quicksettings to change our internal config without the apply button for them
     let quicksettings = gradioApp().querySelector('#quicksettings');
-    let commonQueryPart = "[id^=setting_tac] > label >";
+    let commonQueryPart = "[id^=setting_tac] > label";
     quicksettings?.querySelectorAll(`${commonQueryPart} input, ${commonQueryPart} textarea, ${commonQueryPart} select`).forEach(e => {
         e.addEventListener("change", () => {
             setTimeout(async () => { 
@@ -813,23 +872,24 @@ async function setup() {
             }, 500);
         });
     });
+    quicksettings?.querySelectorAll(`[id^=setting_tac].gradio-dropdown input`).forEach(e => {
+        observeElement(e, "value", () => {
+            setTimeout(async () => { 
+                await syncOptions();
+            }, 500);
+        })
+    });
 
     // Add mutation observer for the model hash text to also allow hash-based blacklist again
     let modelHashText = gradioApp().querySelector("#sd_checkpoint_hash");
+    updateModelName();
     if (modelHashText) {
         currentModelHash = modelHashText.title
         let modelHashObserver = new MutationObserver((mutationList, observer) => {
             for (const mutation of mutationList) {
                 if (mutation.type === "attributes" && mutation.attributeName === "title") {
                     currentModelHash = mutation.target.title;
-                    let modelDropdown = gradioApp().querySelector("#setting_sd_model_checkpoint span.single-select")
-                    if (modelDropdown) {
-                        currentModelName = modelDropdown.textContent;
-                    } else {
-                        // Fallback for older versions
-                        modelDropdown = gradioApp().querySelector("#setting_sd_model_checkpoint select");
-                        currentModelName = modelDropdown.value;
-                    }
+                    updateModelName();
                 }
             }
         });
@@ -840,53 +900,18 @@ async function setup() {
     if (textAreas.every(v => v === null || v === undefined)) return;
     // Already added or unnecessary to add
     if (gradioApp().querySelector('.autocompleteResults.p')) {
-        if (gradioApp().querySelector('.autocompleteResults.n') || !CFG.activeIn.negativePrompts) {
+        if (gradioApp().querySelector('.autocompleteResults.n') || !TAC_CFG.activeIn.negativePrompts) {
             return;
         }
-    } else if (!CFG.activeIn.txt2img && !CFG.activeIn.img2img) {
+    } else if (!TAC_CFG.activeIn.txt2img && !TAC_CFG.activeIn.img2img) {
         return;
     }
 
-    textAreas.forEach(area => {
-        // Return if autocomplete is disabled for the current area type in config
-        let textAreaId = getTextAreaIdentifier(area);
-        if ((!CFG.activeIn.img2img && textAreaId.includes("img2img"))
-            || (!CFG.activeIn.txt2img && textAreaId.includes("txt2img"))
-            || (!CFG.activeIn.negativePrompts && textAreaId.includes("n"))
-            || (!CFG.activeIn.thirdParty && textAreaId.includes("thirdParty"))) {
-            return;
-        }
-
-        // Only add listeners once
-        if (!area.classList.contains('autocomplete')) {
-            // Add our new element
-            var resultsDiv = createResultsDiv(area);
-            area.parentNode.insertBefore(resultsDiv, area.nextSibling);
-            // Hide by default so it doesn't show up on page load
-            hideResults(area);
-
-            // Add autocomplete event listener
-            area.addEventListener('input', debounce(() => autocomplete(area, area.value), CFG.delayTime));
-            // Add focusout event listener
-            area.addEventListener('focusout', debounce(() => hideResults(area), 400));
-            // Add up and down arrow event listener
-            area.addEventListener('keydown', (e) => navigateInList(area, e));
-            // CompositionEnd fires after the user has finished IME composing
-            // We need to block hide here to prevent the enter key from insta-closing the results
-            area.addEventListener('compositionend', () => {
-                hideBlocked = true;
-                setTimeout(() => { hideBlocked = false; }, 100);
-            });
-
-            // Add class so we know we've already added the listeners
-            area.classList.add('autocomplete');
-        }
-    });
+    textAreas.forEach(area => addAutocompleteToArea(area));
 
     // Add style to dom
     let acStyle = document.createElement('style');
-    //let css = gradioApp().querySelector('.dark') ? autocompleteCSS_dark : autocompleteCSS_light;
-    let mode = gradioApp().querySelector('.dark') ? 0 : 1;
+    let mode = (document.querySelector(".dark") || gradioApp().querySelector(".dark")) ? 0 : 1;
     // Check if we are on webkit
     let browser = navigator.userAgent.toLowerCase().indexOf('firefox') > -1 ? "firefox" : "other";
     
@@ -909,17 +934,17 @@ async function setup() {
     // Callback
     await processQueue(QUEUE_AFTER_SETUP, null);
 }
-let loading = false;
+var tacLoading = false;
 onUiUpdate(async () => {
-    if (loading) return;
+    if (tacLoading) return;
     if (Object.keys(opts).length === 0) return;
-    if (CFG) return;
-    loading = true;
+    if (TAC_CFG) return;
+    tacLoading = true;
     // Get our tag base path from the temp file
     tagBasePath = await readFile(`tmp/tagAutocompletePath.txt`);
     // Load config from webui opts
     await syncOptions();
     // Rest of setup
     setup();
-    loading = false;
+    tacLoading = false;
 });

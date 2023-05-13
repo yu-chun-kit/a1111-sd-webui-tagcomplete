@@ -1,13 +1,16 @@
 # This helper script scans folders for wildcards and embeddings and writes them
 # to a temporary file to expose it to the javascript side
 
-import gradio as gr
+import glob
 from pathlib import Path
-from modules import scripts, script_callbacks, shared, sd_hijack
+
+import gradio as gr
 import yaml
+from modules import script_callbacks, scripts, sd_hijack, shared
 
 try:
-    from modules.paths import script_path, extensions_dir
+    from modules.paths import extensions_dir, script_path
+
     # Webui root path
     FILE_DIR = Path(script_path)
 
@@ -159,7 +162,8 @@ def get_hypernetworks():
     """Write a list of all hypernetworks"""
 
     # Get a list of all hypernetworks in the folder
-    all_hypernetworks = [str(h.name) for h in HYP_PATH.rglob("*") if h.suffix in {".pt"}]
+    hyp_paths = [Path(h) for h in glob.glob(HYP_PATH.joinpath("**/*").as_posix(), recursive=True)]
+    all_hypernetworks = [str(h.name) for h in hyp_paths if h.suffix in {".pt"}]
     # Remove file extensions
     return sorted([h[:h.rfind('.')] for h in all_hypernetworks], key=lambda x: x.lower())
 
@@ -167,7 +171,8 @@ def get_lora():
     """Write a list of all lora"""
 
     # Get a list of all lora in the folder
-    all_lora = [str(l.name) for l in LORA_PATH.rglob("*") if l.suffix in {".safetensors", ".ckpt", ".pt"}]
+    lora_paths = [Path(l) for l in glob.glob(LORA_PATH.joinpath("**/*").as_posix(), recursive=True)]
+    all_lora = [str(l.name) for l in lora_paths if l.suffix in {".safetensors", ".ckpt", ".pt"}]
     # Remove file extensions
     return sorted([l[:l.rfind('.')] for l in all_lora], key=lambda x: x.lower())
 
@@ -175,7 +180,8 @@ def get_lyco():
     """Write a list of all LyCORIS/LOHA from https://github.com/KohakuBlueleaf/a1111-sd-webui-lycoris"""
 
     # Get a list of all LyCORIS in the folder
-    all_lyco = [str(ly.name) for ly in LYCO_PATH.rglob("*") if ly.suffix in {".safetensors", ".ckpt", ".pt"}]
+    lyco_paths = [Path(ly) for ly in glob.glob(LYCO_PATH.joinpath("**/*").as_posix(), recursive=True)]
+    all_lyco = [str(ly.name) for ly in lyco_paths if ly.suffix in {".safetensors", ".ckpt", ".pt"}]
     # Remove file extensions
     return sorted([ly[:ly.rfind('.')] for ly in all_lyco], key=lambda x: x.lower())
 
@@ -200,6 +206,14 @@ def update_tag_files():
     csv_files = files
     csv_files_withnone = ["None"] + files
 
+json_files = []
+json_files_withnone = []
+def update_json_files():
+    """Returns a list of all potential json files"""
+    global json_files, json_files_withnone
+    files = [str(j.relative_to(TAGS_PATH)) for j in TAGS_PATH.glob("*.json")]
+    json_files = files
+    json_files_withnone = ["None"] + files
 
 
 # Write the tag base path to a fixed location temporary file
@@ -209,6 +223,7 @@ if not STATIC_TEMP_PATH.exists():
 
 write_tag_base_path()
 update_tag_files()
+update_json_files()
 
 # Check if the temp path exists and create it if not
 if not TEMP_PATH.exists():
@@ -272,7 +287,7 @@ def on_ui_settings():
     shared.opts.add_option("tac_activeIn.txt2img", shared.OptionInfo(True, "Active in txt2img (Requires restart)", section=TAC_SECTION))
     shared.opts.add_option("tac_activeIn.img2img", shared.OptionInfo(True, "Active in img2img (Requires restart)", section=TAC_SECTION))
     shared.opts.add_option("tac_activeIn.negativePrompts", shared.OptionInfo(True, "Active in negative prompts (Requires restart)", section=TAC_SECTION))
-    shared.opts.add_option("tac_activeIn.thirdParty", shared.OptionInfo(True, "Active in third party textboxes [Dataset Tag Editor] (Requires restart)", section=TAC_SECTION))
+    shared.opts.add_option("tac_activeIn.thirdParty", shared.OptionInfo(True, "Active in third party textboxes [Dataset Tag Editor] [Image Browser] [Tagger] [Multidiffusion Upscaler] (Requires restart)", section=TAC_SECTION))
     shared.opts.add_option("tac_activeIn.modelList", shared.OptionInfo("", "List of model names (with file extension) or their hashes to use as black/whitelist, separated by commas.", section=TAC_SECTION))
     shared.opts.add_option("tac_activeIn.modelListMode", shared.OptionInfo("Blacklist", "Mode to use for model list", gr.Dropdown, lambda: {"choices": ["Blacklist","Whitelist"]}, section=TAC_SECTION))
     # Results related settings
@@ -301,6 +316,8 @@ def on_ui_settings():
     # Extra file settings
     shared.opts.add_option("tac_extra.extraFile", shared.OptionInfo("extra-quality-tags.csv", "Extra filename (for small sets of custom tags)", gr.Dropdown, lambda: {"choices": csv_files_withnone}, refresh=update_tag_files, section=TAC_SECTION))
     shared.opts.add_option("tac_extra.addMode", shared.OptionInfo("Insert before", "Mode to add the extra tags to the main tag list", gr.Dropdown, lambda: {"choices": ["Insert before","Insert after"]}, section=TAC_SECTION))
+    # Chant settings
+    shared.opts.add_option("tac_chantFile", shared.OptionInfo("demo-chants.json", "Chant filename (Chants are longer prompt presets)", gr.Dropdown, lambda: {"choices": json_files_withnone}, refresh=update_json_files, section=TAC_SECTION))
     # Custom mappings
     keymapDefault = """\
 {
