@@ -67,7 +67,7 @@ def get_ext_wildcards():
     wildcard_files = []
 
     for path in WILDCARD_EXT_PATHS:
-        wildcard_files.append(path.relative_to(FILE_DIR).as_posix())
+        wildcard_files.append(path.as_posix())
         wildcard_files.extend(p.relative_to(path).as_posix() for p in path.rglob("*.txt") if p.name != "put wildcards here.txt")
         wildcard_files.append("-----")
 
@@ -86,14 +86,18 @@ def get_ext_wildcard_tags():
         try:
             with open(path, encoding="utf8") as file:
                 data = yaml.safe_load(file)
-                for item in data:
-                    if data[item] and 'Tags' in data[item]:
-                        wildcard_tags[count] = ','.join(data[item]['Tags'])
-                        count += 1
-                    else:
-                        print('Issue with tags found in ' + path.name + ' at item ' + item)
-        except yaml.YAMLError as exc:
-            print(exc)
+                if data:
+                    for item in data:
+                        if data[item] and 'Tags' in data[item] and isinstance(data[item]['Tags'], list):
+                            wildcard_tags[count] = ','.join(data[item]['Tags'])
+                            count += 1
+                        else:
+                            print('Issue with tags found in ' + path.name + ' at item ' + item)
+                else:
+                    print('No data found in ' + path.name)
+        except yaml.YAMLError:
+            print('Issue in parsing YAML file ' + path.name                       )
+            continue
     # Sort by count
     sorted_tags = sorted(wildcard_tags.items(), key=lambda item: item[1], reverse=True)
     output = []
@@ -188,7 +192,7 @@ def get_lyco():
 def write_tag_base_path():
     """Writes the tag base path to a fixed location temporary file"""
     with open(STATIC_TEMP_PATH.joinpath('tagAutocompletePath.txt'), 'w', encoding="utf-8") as f:
-        f.write(TAGS_PATH.relative_to(FILE_DIR).as_posix())
+        f.write(TAGS_PATH.as_posix())
 
 
 def write_to_temp_file(name, data):
@@ -241,41 +245,49 @@ write_to_temp_file('lyco.txt', [])
 if not TEMP_PATH.joinpath("emb.txt").exists():
     write_to_temp_file('emb.txt', [])
 
-# Write wildcards to wc.txt if found
-if WILDCARD_PATH.exists():
-    wildcards = [WILDCARD_PATH.relative_to(FILE_DIR).as_posix()] + get_wildcards()
-    if wildcards:
-        write_to_temp_file('wc.txt', wildcards)
-
-# Write extension wildcards to wce.txt if found
-if WILDCARD_EXT_PATHS is not None:
-    wildcards_ext = get_ext_wildcards()
-    if wildcards_ext:
-        write_to_temp_file('wce.txt', wildcards_ext)
-    # Write yaml extension wildcards to wcet.txt if found
-    wildcards_yaml_ext = get_ext_wildcard_tags()
-    if wildcards_yaml_ext:
-        write_to_temp_file('wcet.txt', wildcards_yaml_ext)
-
 # Write embeddings to emb.txt if found
 if EMB_PATH.exists():
     # Get embeddings after the model loaded callback
     script_callbacks.on_model_loaded(get_embeddings)
 
-if HYP_PATH.exists():
-    hypernets = get_hypernetworks()
-    if hypernets:
-        write_to_temp_file('hyp.txt', hypernets)
+def refresh_temp_files():
+    write_temp_files()
+    get_embeddings(shared.sd_model)
 
-if LORA_PATH is not None and LORA_PATH.exists():
-    lora = get_lora()
-    if lora:
-        write_to_temp_file('lora.txt', lora)
+def write_temp_files():
+    # Write wildcards to wc.txt if found
+    if WILDCARD_PATH.exists():
+        wildcards = [WILDCARD_PATH.relative_to(FILE_DIR).as_posix()] + get_wildcards()
+        if wildcards:
+            write_to_temp_file('wc.txt', wildcards)
 
-if LYCO_PATH is not None and LYCO_PATH.exists():
-    lyco = get_lyco()
-    if lyco:
-        write_to_temp_file('lyco.txt', lyco)
+    # Write extension wildcards to wce.txt if found
+    if WILDCARD_EXT_PATHS is not None:
+        wildcards_ext = get_ext_wildcards()
+        if wildcards_ext:
+            write_to_temp_file('wce.txt', wildcards_ext)
+        # Write yaml extension wildcards to wcet.txt if found
+        wildcards_yaml_ext = get_ext_wildcard_tags()
+        if wildcards_yaml_ext:
+            write_to_temp_file('wcet.txt', wildcards_yaml_ext)
+
+    if HYP_PATH.exists():
+        hypernets = get_hypernetworks()
+        if hypernets:
+            write_to_temp_file('hyp.txt', hypernets)
+
+    if LORA_PATH is not None and LORA_PATH.exists():
+        lora = get_lora()
+        if lora:
+            write_to_temp_file('lora.txt', lora)
+
+    if LYCO_PATH is not None and LYCO_PATH.exists():
+        lyco = get_lyco()
+        if lyco:
+            write_to_temp_file('lyco.txt', lyco)
+
+
+write_temp_files()
 
 # Register autocomplete options
 def on_ui_settings():
@@ -306,6 +318,7 @@ def on_ui_settings():
     shared.opts.add_option("tac_replaceUnderscores", shared.OptionInfo(True, "Replace underscores with spaces on insertion", section=TAC_SECTION))
     shared.opts.add_option("tac_escapeParentheses", shared.OptionInfo(True, "Escape parentheses on insertion", section=TAC_SECTION))
     shared.opts.add_option("tac_appendComma", shared.OptionInfo(True, "Append comma on tag autocompletion", section=TAC_SECTION))
+    shared.opts.add_option("tac_wildcardCompletionMode", shared.OptionInfo("To next folder level", "How to complete nested wildcard paths (e.g. \"hair/colours/light/...\")", gr.Dropdown, lambda: {"choices": ["To next folder level","To first difference","Always fully"]}, section=TAC_SECTION))
     # Alias settings
     shared.opts.add_option("tac_alias.searchByAlias", shared.OptionInfo(True, "Search by alias", section=TAC_SECTION))
     shared.opts.add_option("tac_alias.onlyShowAlias", shared.OptionInfo(False, "Only show alias", section=TAC_SECTION))
@@ -366,5 +379,6 @@ def on_ui_settings():
         shared.opts.add_option("tac_keymap", shared.OptionInfo(keymapDefault, keymapLabel, gr.Textbox, section=TAC_SECTION))
         shared.opts.add_option("tac_colormap", shared.OptionInfo(colorDefault, colorLabel, gr.Textbox, section=TAC_SECTION))
 
-
+    shared.opts.add_option("tac_refreshTempFiles", shared.OptionInfo("Refresh TAC temp files", "Refresh internal temp files", gr.HTML, {}, refresh=refresh_temp_files, section=TAC_SECTION))
+    
 script_callbacks.on_ui_settings(on_ui_settings)
