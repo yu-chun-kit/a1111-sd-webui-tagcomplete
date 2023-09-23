@@ -8,7 +8,7 @@ class LoraParser extends BaseTagParser {
         if (tagword !== "<" && tagword !== "<l:" && tagword !== "<lora:") {
             let searchTerm = tagword.replace("<lora:", "").replace("<l:", "").replace("<", "");
             let filterCondition = x => x.toLowerCase().includes(searchTerm) || x.toLowerCase().replaceAll(" ", "_").includes(searchTerm);
-            tempResults = loras.filter(x => filterCondition(x)); // Filter by tagword
+            tempResults = loras.filter(x => filterCondition(x[0])); // Filter by tagword
         } else {
             tempResults = loras;
         }
@@ -16,8 +16,15 @@ class LoraParser extends BaseTagParser {
         // Add final results
         let finalResults = [];
         tempResults.forEach(t => {
-            let result = new AutocompleteResult(t.trim(), ResultType.lora)
+            const text = t[0].trim();
+            let lastDot = text.lastIndexOf(".") > -1 ? text.lastIndexOf(".") : text.length;
+            let lastSlash = text.lastIndexOf("/") > -1 ? text.lastIndexOf("/") : -1;
+            let name = text.substring(lastSlash + 1, lastDot);
+
+            let result = new AutocompleteResult(name, ResultType.lora)
             result.meta = "Lora";
+            result.sortKey = t[1];
+            result.hash = t[2];
             finalResults.push(result);
         });
 
@@ -28,18 +35,24 @@ class LoraParser extends BaseTagParser {
 async function load() {
     if (loras.length === 0) {
         try {
-            loras = (await readFile(`${tagBasePath}/temp/lora.txt`)).split("\n")
-                .filter(x => x.trim().length > 0) // Remove empty lines
-                .map(x => x.trim()); // Remove carriage returns and padding if it exists
+            loras = (await loadCSV(`${tagBasePath}/temp/lora.txt`))
+                .filter(x => x[0]?.trim().length > 0) // Remove empty lines
+                .map(x => [x[0]?.trim(), x[1], x[2]]); // Trim filenames and return the name, sortKey, hash pairs
         } catch (e) {
             console.error("Error loading lora.txt: " + e);
         }
     }
 }
 
-function sanitize(tagType, text) {
+async function sanitize(tagType, text) {
     if (tagType === ResultType.lora) {
-        return `<lora:${text}:${TAC_CFG.extraNetworksDefaultMultiplier}>`;
+        let multiplier = TAC_CFG.extraNetworksDefaultMultiplier;
+        let info = await fetchAPI(`tacapi/v1/lora-info/${text}`)
+        if (info && info["preferred weight"]) {
+            multiplier = info["preferred weight"];
+        }
+
+        return `<lora:${text}:${multiplier}>`;
     }
     return null;
 }

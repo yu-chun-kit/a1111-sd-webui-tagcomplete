@@ -42,7 +42,7 @@ You can install it using the inbuilt available extensions list, clone the files 
 Tag autocomplete supports built-in completion for:
 - 🏷️ **Danbooru & e621 tags** (Top 100k by post count, as of November 2022)
 - ✳️ [**Wildcards**](#wildcards)
-- ➕ [**Extra network**](#extra-networks-embeddings-hypernets-lora) filenames, including
+- ➕ [**Extra network**](#extra-networks-embeddings-hypernets-lora-) filenames, including
    - Textual Inversion embeddings [(jump to readme section)]
    - Hypernetworks
    - LoRA
@@ -73,6 +73,10 @@ https://user-images.githubusercontent.com/34448969/200128020-10d9a8b2-cea6-4e3f-
 Wildcard script support:
 
 https://user-images.githubusercontent.com/34448969/200128031-22dd7c33-71d1-464f-ae36-5f6c8fd49df0.mp4
+
+Extra Network preview support:
+
+https://github.com/DominikDoom/a1111-sd-webui-tagcomplete/assets/34448969/3c0cad84-fb5f-436d-b05a-28db35860d13
 
 Dark and Light mode supported, including tag colors:
 
@@ -122,6 +126,49 @@ Completion for these types is triggered by typing `<`. By default it will show t
 - `<l:` will only show LoRA and LyCORIS
    - Or `<lora:` and `<lyco:` respectively for the long form
 - `<h:` or `<hypernet:` will only show Hypernetworks
+
+### Live previews
+Tag Autocomplete will now also show the preview images used for the cards in the Extra Networks menu in a small window next to the regular popup.
+This enables quick comparisons and additional info for unclear filenames without having to stop typing to look it up in the webui menu.
+It works for all supported extra network types that use preview images (Loras/Lycos, Embeddings & Hypernetworks). The preview window will stay hidden for normal tags or if no preview was found.
+
+![extra_live_preview](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete/assets/34448969/6a5d81e6-b3a0-407b-8bac-c9790f86016c)
+
+### Lora / Lyco trigger word completion
+This feature will try to add known trigger words on autocompleting a Lora/Lyco.
+
+It primarily uses the list provided by the [model-keyword](https://github.com/mix1009/model-keyword/) extension, which thus needs to be installed to use this feature. The list is also regularly updated through it.
+However, once installed, you can deactivate it if you want, since tag autocomplete only needs the local keyword lists it ships with, not the extension itself.
+The used files are `lora-keyword.txt` and `lora-keyword-user.txt` in the model-keyword installation folder.
+If the main file isn't found, the feature will simply deactivate itself, everything else should work normally.
+
+#### Note:
+As of [v1.5.0](https://github.com/AUTOMATIC1111/stable-diffusion-webui/commit/a3ddf464a2ed24c999f67ddfef7969f8291567be), the webui provides a native method to add activation keywords for Lora through the Extra networks config UI.
+These trigger words will always be preferred over the model-keyword ones and can be used without needing to install the model-keyword extension. This will however, obviously, be limited to those manually added keywords. For automatic discovery of keywords, you will still need the big list provided by model-keyword.
+
+Custom trigger words can be added through two methods:
+1. Using the extra networks UI (recommended):
+   - Only works with webui version v1.5.0 upwards, but much easier to use and works without the model-keyword extension
+   - This method requires no manual refresh
+   - <details>
+     <summary>Image example</summary>
+	   
+     ![edit button](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete/assets/34448969/22e95040-1d85-4b7e-a005-1918fafec807)
+     ![lora_edit](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete/assets/34448969/3e6c5245-d3bc-498d-8cd2-26eadf8882e7)
+     </details>
+2. Through the model-keyword UI:
+   - One issue with this method is that it has no official support for the Lycoris extension and doesn't scan its folder for files, so to add them through the UI you will have to temporarily move them into the Lora model folder to be able to select them in model-keywords dropdown. Some are already included in the default list though, so trying it out first is advisable.
+   - After having added your custom keywords, you will need to either restart the UI or use the "Refresh TAC temp files" setting button.
+   - <details>
+     <summary>Image example</summary>
+
+     ![image](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete/assets/34448969/4302c44e-c632-473d-a14a-76f164f966cb)
+     </details>
+
+Sometimes the inserted keywords can be wrong due to a hash collision, however model-keyword and tag autocomplete take the name of the file into account too if the collision is known.
+
+If it still inserts something wrong or you simply don't want the keywords added that time, you can undo / redo it directly after as often as you want, until you type something else
+(It uses the default undo/redo action of the browser, so <kbd>CTRL</kbd> + <kbd>Z</kbd>, context menu and mouse macros should all work).
 
 ### Embedding type filtering
 Embeddings trained for Stable Diffusion 1.x or 2.x models respectively are incompatible with the other type. To make it easier to find valid embeds, they are categorized by "v1 Embedding" and "v2 Embedding", including a slight color difference. You can also filter your search to include only v1 or v2 embeddings by typing `<v1/2` or `<e:v1/2` followed by the actual search term.
@@ -271,6 +318,14 @@ If this option is turned on, it will show a `?` link next to the tag. Clicking t
 
 ![wikiLink](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete/assets/34448969/733e1ba8-89e1-4c2b-8c4e-2d23352bd3d7)
 </details>
+<!-- Wiki links -->
+<details>
+<summary>Extra network live previews</summary>
+
+This option enables a small preview window alongside the normal completion popup that will show the card preview also usd in the extra networks tab for that file.
+
+![extraNetworkPreviews](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete/assets/34448969/72b5473f-563e-4238-a513-38b60ac87e96)
+</details>
 <!-- Insertion -->
 <details>
 <summary>Completion settings</summary>
@@ -284,6 +339,26 @@ Parentheses are used as control characters in the webui to give more attention /
 Depending on the last setting, tag autocomplete will append a comma and space after inserting a tag, which may help for rapid completion of multiple tags in a row.
 
 ![insertEscape](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete/assets/34448969/d28557be-6c75-43fd-bf17-c0609223b384)
+</details>
+<!-- Lora keywords -->
+<details>
+<summary>Lora / Lyco trigger word insertion</summary>
+
+See [the detailed readme section](#lora--lyco-trigger-word-completion) for more info.
+
+Selects the mode to use for Lora / Lyco trigger word insertion.
+Needs the [model-keyword](https://github.com/mix1009/model-keyword/) extension to be installed, else it will do nothing.
+
+- Never
+   - Will not complete trigger words, even if the model-keyword extension is installed
+- Only user list
+   - Will only load the custom keywords specified in the lora-keyword-user.txt file and ignore the default list
+- Always
+   - Will load and use both lists
+
+Switching from "Never" to what you had before or back will not require a restart, but changing between the full and user only list will.
+
+![loraKeywordCompletion](https://github.com/DominikDoom/a1111-sd-webui-tagcomplete/assets/34448969/8bec89ea-68f7-4783-b5cb-55869d9121a3)
 </details>
 <!-- Wildcard path mode -->
 <details>
@@ -399,7 +474,9 @@ You can also add this to your quicksettings bar to have the refresh button avail
 
 # Translations
 An additional file can be added in the translation section, which will be used to translate both tags and aliases and also enables searching by translation.
-This file needs to be a CSV in the format `<English tag/alias>,<Translation>`, but for backwards compatibility with older files that used a three column format, you can turn on `Translation file uses old 3-column translation format instead of the new 2-column one` to support them. In that case, the second column will be unused and skipped during parsing.
+This file needs to be a CSV in the format `<English tag/alias>,<Translation>`. Some older files use a three column format, which requires a compatibility setting to be activated.
+You can find it under `Settings > Tag autocomplete > Translation filename > Translation file uses old 3-column translation format instead of the new 2-column one`.
+With it on, the second column will be unused and skipped during parsing.
 
 Example with Chinese translation:
 

@@ -9,7 +9,11 @@ const core = [
     "#img2img_prompt > label > textarea",
     "#txt2img_neg_prompt > label > textarea",
     "#img2img_neg_prompt > label > textarea",
-    ".prompt > label > textarea"
+    ".prompt > label > textarea",
+    "#txt2img_edit_style_prompt > label > textarea",
+    "#txt2img_edit_style_neg_prompt > label > textarea",
+    "#img2img_edit_style_prompt > label > textarea",
+    "#img2img_edit_style_neg_prompt > label > textarea"
 ];
 
 // Third party text area selectors
@@ -57,6 +61,24 @@ const thirdParty = {
             "[id^=MD-i2i][id$=prompt] textarea",
             "[id^=MD-i2i][id$=prompt] input[type='text']"
         ]
+    },
+    "adetailer-t2i": {
+        "base": "#txt2img_script_container",
+        "hasIds": true,
+        "onDemand": true,
+        "selectors": [
+            "[id^=script_txt2img_adetailer_ad_prompt] textarea",
+            "[id^=script_txt2img_adetailer_ad_negative_prompt] textarea"
+        ]
+    },
+    "adetailer-i2i": {
+        "base": "#img2img_script_container",
+        "hasIds": true,
+        "onDemand": true,
+        "selectors": [
+            "[id^=script_img2img_adetailer_ad_prompt] textarea",
+            "[id^=script_img2img_adetailer_ad_negative_prompt] textarea"
+        ]
     }
 }
 
@@ -90,7 +112,7 @@ function addOnDemandObservers(setupFunction) {
 
         let base = gradioApp().querySelector(entry.base);
         if (!base) continue;
-        
+
         let accordions = [...base?.querySelectorAll(".gradio-accordion")];
         if (!accordions) continue;
 
@@ -115,12 +137,12 @@ function addOnDemandObservers(setupFunction) {
                             [...gradioApp().querySelectorAll(entry.selectors.join(", "))].forEach(x => setupFunction(x));
                         } else { // Otherwise, we have to find the text areas by their adjacent labels
                             let base = gradioApp().querySelector(entry.base);
-                
+
                             // Safety check
                             if (!base) continue;
-                
+
                             let allTextAreas = [...base.querySelectorAll("textarea, input[type='text']")];
-                
+
                             // Filter the text areas where the adjacent label matches one of the selectors
                             let matchingTextAreas = allTextAreas.filter(ta => [...ta.parentElement.childNodes].some(x => entry.selectors.includes(x.innerText)));
                             matchingTextAreas.forEach(x => setupFunction(x));

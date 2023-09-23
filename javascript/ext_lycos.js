@@ -8,7 +8,7 @@ class LycoParser extends BaseTagParser {
         if (tagword !== "<" && tagword !== "<l:" && tagword !== "<lyco:") {
             let searchTerm = tagword.replace("<lyco:", "").replace("<l:", "").replace("<", "");
             let filterCondition = x => x.toLowerCase().includes(searchTerm) || x.toLowerCase().replaceAll(" ", "_").includes(searchTerm);
-            tempResults = lycos.filter(x => filterCondition(x)); // Filter by tagword
+            tempResults = lycos.filter(x => filterCondition(x[0])); // Filter by tagword
         } else {
             tempResults = lycos;
         }
@@ -16,8 +16,15 @@ class LycoParser extends BaseTagParser {
         // Add final results
         let finalResults = [];
         tempResults.forEach(t => {
-            let result = new AutocompleteResult(t.trim(), ResultType.lyco)
+            const text = t[0].trim();
+            let lastDot = text.lastIndexOf(".") > -1 ? text.lastIndexOf(".") : text.length;
+            let lastSlash = text.lastIndexOf("/") > -1 ? text.lastIndexOf("/") : -1;
+            let name = text.substring(lastSlash + 1, lastDot);
+
+            let result = new AutocompleteResult(name, ResultType.lyco)
             result.meta = "Lyco";
+            result.sortKey = t[1];
+            result.hash = t[2];
             finalResults.push(result);
         });
 
@@ -28,18 +35,24 @@ class LycoParser extends BaseTagParser {
 async function load() {
     if (lycos.length === 0) {
         try {
-            lycos = (await readFile(`${tagBasePath}/temp/lyco.txt`)).split("\n")
-                .filter(x => x.trim().length > 0) // Remove empty lines
-                .map(x => x.trim()); // Remove carriage returns and padding if it exists
+            lycos = (await loadCSV(`${tagBasePath}/temp/lyco.txt`))
+                .filter(x => x[0]?.trim().length > 0) // Remove empty lines
+                .map(x => [x[0]?.trim(), x[1], x[2]]); // Trim filenames and return the name, sortKey, hash pairs
         } catch (e) {
             console.error("Error loading lyco.txt: " + e);
         }
     }
 }
 
-function sanitize(tagType, text) {
+async function sanitize(tagType, text) {
     if (tagType === ResultType.lyco) {
-        return `<lyco:${text}:${TAC_CFG.extraNetworksDefaultMultiplier}>`;
+        let multiplier = TAC_CFG.extraNetworksDefaultMultiplier;
+        let info = await fetchAPI(`tacapi/v1/lyco-info/${text}`)
+        if (info && info["preferred weight"]) {
+            multiplier = info["preferred weight"];
+        }
+
+        return `<lyco:${text}:${multiplier}>`;
     }
     return null;
 }

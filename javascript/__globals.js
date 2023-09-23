@@ -1,6 +1,8 @@
 // Core components
 var TAC_CFG = null;
 var tagBasePath = "";
+var modelKeywordPath = "";
+var tacSelfTrigger = false;
 
 // Tag completion data loaded from files
 var allTags = [];
@@ -10,10 +12,12 @@ var extras = [];
 var wildcardFiles = [];
 var wildcardExtFiles = [];
 var yamlWildcards = [];
+var umiWildcards = [];
 var embeddings = [];
 var hypernetworks = [];
 var loras = [];
 var lycos = [];
+var modelKeywordDict = new Map();
 var chants = [];
 
 // Selected model info for black/whitelisting
@@ -33,6 +37,13 @@ let hideBlocked = false;
 // Tag selection for keyboard navigation
 var selectedTag = null;
 var oldSelectedTag = null;
+var resultCountBeforeNormalTags = 0;
+
+// Lora keyword undo/redo history
+var textBeforeKeywordInsertion = "";
+var textAfterKeywordInsertion = "";
+var lastEditWasKeywordInsertion = false;
+var keywordInsertionUndone = false;
 
 // UMI
 var umiPreviousTags = [];

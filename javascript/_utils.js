@@ -41,7 +41,7 @@ function parseCSV(str) {
 async function readFile(filePath, json = false, cache = false) {
     if (!cache)
         filePath += `?${new Date().getTime()}`;
-        
+
     let response = await fetch(`file=${filePath}`);
 
     if (response.status != 200) {
@@ -59,6 +59,54 @@ async function readFile(filePath, json = false, cache = false) {
 async function loadCSV(path) {
     let text = await readFile(path);
     return parseCSV(text);
+}
+
+// Fetch API
+async function fetchAPI(url, json = true, cache = false) {
+    if (!cache) {
+        const appendChar = url.includes("?") ? "&" : "?";
+        url += `${appendChar}${new Date().getTime()}`
+    }
+
+    let response = await fetch(url);
+
+    if (response.status != 200) {
+        console.error(`Error fetching API endpoint "${url}": ` + response.status, response.statusText);
+        return null;
+    }
+
+    if (json)
+        return await response.json();
+    else
+        return await response.text();
+}
+
+async function postAPI(url, body) {
+    let response = await fetch(url, { method: "POST", body: body });
+
+    if (response.status != 200) {
+        console.error(`Error posting to API endpoint "${url}": ` + response.status, response.statusText);
+        return null;
+    }
+
+    return await response.json();
+}
+
+// Extra network preview thumbnails
+async function getExtraNetworkPreviewURL(filename, type) {
+    const previewJSON = await fetchAPI(`tacapi/v1/thumb-preview/${filename}?type=${type}`, true, true);
+    if (previewJSON?.url) {
+        const properURL = `sd_extra_networks/thumb?filename=${previewJSON.url}`;
+        if ((await fetch(properURL)).status == 200) {
+            return properURL;
+        } else {
+            // create blob url
+            const blob = await (await fetch(`tacapi/v1/thumb-preview-blob/${filename}?type=${type}`)).blob();
+            return URL.createObjectURL(blob);
+        }
+    } else {
+        return null;
+    }
 }
 
 // Debounce function to prevent spamming the autocomplete function
@@ -88,6 +136,28 @@ function difference(a, b) {
         a.reduce((acc, v) => acc.set(v, (acc.get(v) || 0) + 1), new Map())
     )].reduce((acc, [v, count]) => acc.concat(Array(Math.abs(count)).fill(v)), []);
 }
+
+// Object flatten function adapted from https://stackoverflow.com/a/61602592
+// $roots keeps previous parent properties as they will be added as a prefix for each prop.
+// $sep is just a preference if you want to seperate nested paths other than dot.
+function flatten(obj, roots = [], sep = ".") {
+  return Object.keys(obj).reduce(
+    (memo, prop) =>
+      Object.assign(
+        // create a new object
+        {},
+        // include previously returned object
+        memo,
+        Object.prototype.toString.call(obj[prop]) === "[object Object]"
+          ? // keep working if value is an object
+            flatten(obj[prop], roots.concat([prop]), sep)
+          : // include current prop and value and prefix prop with the roots
+            { [roots.concat([prop]).join(sep)]: obj[prop] }
+      ),
+    {}
+  );
+}
+
 
 // Sliding window function to get possible combination groups of an array
 function toNgrams(inputArray, size) {
@@ -138,6 +208,42 @@ function observeElement(element, property, callback, delay = 0) {
                 return newValue;
             }
         });
+    }
+}
+
+// Sort functions
+function getSortFunction() {
+    let criterion = TAC_CFG.modelSortOrder || "Name";
+
+    const textSort = (a, b, reverse = false) => {
+        const textHolderA = a.type === ResultType.chant ? a.aliases : a.text;
+        const textHolderB = b.type === ResultType.chant ? b.aliases : b.text;
+
+        const aKey = a.sortKey || textHolderA;
+        const bKey = b.sortKey || textHolderB;
+        return reverse ? bKey.localeCompare(aKey) : aKey.localeCompare(bKey);
+    }
+    const numericSort = (a, b, reverse = false) => {
+        const noKey = reverse ? "-1" : Number.MAX_SAFE_INTEGER;
+        let aParsed = parseFloat(a.sortKey || noKey);
+        let bParsed = parseFloat(b.sortKey || noKey);
+
+        if (aParsed === bParsed) {
+            return textSort(a, b, false);
+        }
+        
+        return reverse ? bParsed - aParsed : aParsed - bParsed;
+    }
+
+    return (a, b) => {
+        switch (criterion) {
+            case "Date Modified (newest first)":
+                return numericSort(a, b, true);
+            case "Date Modified (oldest first)":
+                return numericSort(a, b, false);
+            default:
+                return textSort(a, b);
+        }
     }
 }
 
